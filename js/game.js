@@ -5,7 +5,7 @@
 // ===================================================================================
 
 let gameState = {};
-const SAVE_KEY = 'economicGameSave_v79_t2_t3_impl'; // Incremented version for new structure
+const SAVE_KEY = 'economicGameSave_v79_t2_t3_impl';
 
 function getDefaultGameState() {
     return {
@@ -29,9 +29,9 @@ function getDefaultGameState() {
         },
         suppliedFoods: { grain: true, bread: false, meat: false, beer: false, honey: false, fish: false, },
         foodConsumptionPerSecond: { grain: 0, bread: 0, meat: 0, beer: 0, honey: 0, fish: 0, },
-        currentProductionBonus: 1.0, villageTier: 'settlement', nextSettlerEvent: 10, nextSettlerTime: 10,
+        currentProductionBonus: 1.0, villageTier: C.TIERS.SETTLEMENT, nextSettlerEvent: 10, nextSettlerTime: 10,
         innSupplies: { bread: false, beer: false, meat: false, },
-        buildings: JSON.parse(JSON.stringify(buildingDataConfig)), // Use a deep copy of the config
+        buildings: JSON.parse(JSON.stringify(buildingDataConfig)),
         totalBuildingLimits: totalBuildingLimitsConfig,
         tierRequirements: tierRequirementsConfig,
         buildingQueue: [], 
@@ -94,9 +94,9 @@ function recalculateAllStats() {
     let assistantBonus = 0;
     const assistantCount = gameState.assignedWorkers.foremanAssistant;
     if (assistantCount > 0) {
-        if (isBuildingTierMet('workersGuildhall')) assistantBonus = assistantCount * 65;
-        else if (isBuildingTierMet('workersBarracks')) assistantBonus = assistantCount * 20;
-        else if (isBuildingTierMet('workersQuarters')) assistantBonus = assistantCount * 22;
+        if (isBuildingTierMet('workersGuildhall')) assistantBonus = assistantCount * 65; // Note: 'workersGuildhall' is not in C.BUILDINGS yet
+        else if (isBuildingTierMet('workersBarracks')) assistantBonus = assistantCount * 20; // Note: 'workersBarracks' is not in C.BUILDINGS yet
+        else if (isBuildingTierMet(C.BUILDINGS.WORKERS_QUARTERS)) assistantBonus = assistantCount * 22;
     }
     gameState.workerLimit += assistantBonus;
 
@@ -117,13 +117,13 @@ function calculateBuildTime(key, getDetails = false) {
     }
 
     const baseTime = Object.values(building.cost).reduce((a, b) => a + b, 0) / 5;
-    const builderCount = gameState.assignedWorkers.builder;
+    const builderCount = gameState.assignedWorkers[C.WORKERS.BUILDER];
     const playerBaseSpeed = 1;
     const speedPerBuilder = 0.1;
     const builderPower = builderCount * speedPerBuilder;
     let totalSpeed = playerBaseSpeed + builderPower;
 
-    if (gameState.villageTier !== 'settlement' && builderCount === 0) {
+    if (gameState.villageTier !== C.TIERS.SETTLEMENT && builderCount === 0) {
         totalSpeed = 0;
     }
 
@@ -154,23 +154,23 @@ function calculateNextSettlerTime() {
     let totalBonus = 0;
     
     let innBonus = 0;
-    if (isBuildingTierMet('inn') && gameState.assignedWorkers.innkeeper > 0) {
-        innBonus = gameState.buildings.inn.effect.settlerTimeBonus;
-        if (isBuildingTierMet('tavern') && gameState.assignedWorkers.tavernMaid > 0) {
-            innBonus += gameState.buildings.tavern.effect.settlerTimeBonus;
+    if (isBuildingTierMet(C.BUILDINGS.INN) && gameState.assignedWorkers[C.WORKERS.INNKEEPER] > 0) {
+        innBonus = gameState.buildings[C.BUILDINGS.INN].effect.settlerTimeBonus;
+        if (isBuildingTierMet(C.BUILDINGS.TAVERN) && gameState.assignedWorkers[C.WORKERS.TAVERN_MAID] > 0) {
+            innBonus += gameState.buildings[C.BUILDINGS.TAVERN].effect.settlerTimeBonus;
         }
     }
     totalBonus += innBonus;
 
-    if (isBuildingTierMet('church') && gameState.assignedWorkers.priest > 0) {
-        totalBonus += gameState.buildings.church.effect.settlerTimeBonus;
+    if (isBuildingTierMet(C.BUILDINGS.CHURCH) && gameState.assignedWorkers[C.WORKERS.PRIEST] > 0) {
+        totalBonus += gameState.buildings[C.BUILDINGS.CHURCH].effect.settlerTimeBonus;
     }
 
-    if (isBuildingTierMet('healersHut') && gameState.assignedWorkers.healer > 0) {
-        totalBonus += gameState.buildings.healersHut.effect.settlerTimeBonus;
+    if (isBuildingTierMet(C.BUILDINGS.HEALERS_HUT) && gameState.assignedWorkers[C.WORKERS.HEALER] > 0) {
+        totalBonus += gameState.buildings[C.BUILDINGS.HEALERS_HUT].effect.settlerTimeBonus;
     }
 
-    if (isBuildingTierMet('inn')) {
+    if (isBuildingTierMet(C.BUILDINGS.INN)) {
         if (gameState.innSupplies.bread) totalBonus += 0.05;
         if (gameState.innSupplies.beer) totalBonus += 0.05;
         if (gameState.innSupplies.meat) totalBonus += 0.10;
@@ -209,7 +209,7 @@ function addPopulation(amount) {
 }
 
 function collectResource(type) { 
-    if (gameState.villageTier !== 'settlement') return;
+    if (gameState.villageTier !== C.TIERS.SETTLEMENT) return;
     addResource(type, 1);
 }
 
@@ -424,7 +424,7 @@ function assignWorker(type) {
 }
 
 function unassignWorker(type, force = false) {
-    if (!force && type === 'builder' && gameState.buildingQueue.length > 0 && gameState.assignedWorkers.builder <= 1 && gameState.villageTier !== 'settlement') {
+    if (!force && type === C.WORKERS.BUILDER && gameState.buildingQueue.length > 0 && gameState.assignedWorkers[C.WORKERS.BUILDER] <= 1 && gameState.villageTier !== C.TIERS.SETTLEMENT) {
         const buildingName = _t(gameState.buildings[gameState.buildingQueue[0].key].nameKey);
         queueMessage(_t('messages.unassignError', {building: buildingName}), 'error');
         return;
@@ -789,23 +789,23 @@ function updateGameState(delta) {
 
     if (newTierIndex > currentTierIndex) {
         let canAdvance = false;
-        if (newTier === 'small_village' && isBuildingTierMet('reevesHouse')) canAdvance = true;
-        else if (newTier === 'village' && isBuildingTierMet('villageHall')) canAdvance = true;
-        else if (newTier === 'small_town' && isBuildingTierMet('townHall')) canAdvance = true;
-        else if (newTier === 'town' && isBuildingTierMet('cityHall')) canAdvance = true;
+        if (newTier === C.TIERS.SMALL_VILLAGE && isBuildingTierMet(C.BUILDINGS.REEVES_HOUSE)) canAdvance = true;
+        else if (newTier === C.TIERS.VILLAGE && isBuildingTierMet(C.BUILDINGS.VILLAGE_HALL)) canAdvance = true;
+        else if (newTier === C.TIERS.SMALL_TOWN && isBuildingTierMet('townHall')) canAdvance = true; // Note: 'townHall' is not in C.BUILDINGS yet
+        else if (newTier === C.TIERS.TOWN && isBuildingTierMet('cityHall')) canAdvance = true; // Note: 'cityHall' is not in C.BUILDINGS yet
         
         if (canAdvance) {
             gameState.villageTier = newTier;
             const tierName = _t(`settlementTiers.${newTier}`);
             queueMessage(_t("messages.tierUp", {tier: tierName}));
-            if (newTier === 'small_village') {
+            if (newTier === C.TIERS.SMALL_VILLAGE) {
                 unlockGameFeatures(['wellBuilding', 'fishermansHutBuilding', 'pottersWorkshopBuilding', 'herbalistsGardenBuilding', 'millBuilding', 'bakeryBuilding', 'brickyardBuilding', 'candlemakersWorkshopBuilding']);
                 showTierUpModal();
             }
-            if (newTier === 'village') {
+            if (newTier === C.TIERS.VILLAGE) {
                 unlockGameFeatures(['largeYardBuilding', 'largeGranaryBuilding', 'largeDepotBuilding', 'treasuryBuilding', 'hopFarmBuilding', 'breweryBuilding', 'ranchBuilding', 'butcherBuilding', 'tanneryBuilding', 'sheepFarmBuilding', 'weaversWorkshopBuilding', 'tailorsWorkshopBuilding', 'healersHutBuilding']);
             }
-            if (newTier === 'small_town') {
+            if (newTier === C.TIERS.SMALL_TOWN) {
                 unlockGameFeatures(['tenementBuilding']);
             }
         }

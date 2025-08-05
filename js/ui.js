@@ -223,7 +223,7 @@ function createBuildingCards() {
                 card.className = 'bg-gray-700 rounded-lg p-4 building-card hidden';
                 card.dataset.category = buildingData.category;
                 let supplySection = '';
-                if (key === 'inn') {
+                if (key === C.BUILDINGS.INN) {
                     const breadName = _t('resources.bread');
                     const beerName = _t('resources.beer');
                     const meatName = _t('resources.meat');
@@ -266,7 +266,7 @@ function createCheatPanelButtons() {
 
 // ===================================================================================
 //
-//  SECTION 3: UI DISPLAY & UPDATES
+//  SECTION 3: UI DISPLAY & UPDATES (REFACTORED)
 //
 // ===================================================================================
 
@@ -308,8 +308,7 @@ function isBuildingTierMet(requiredKey) {
     return false;
 }
 
-function updateDisplay() {
-    // Update resource bar
+function updateResourceBar() {
     for (const res in gameState.resources) {
         const amountEl = document.getElementById(`${res}-amount`);
         if (amountEl) amountEl.textContent = Math.floor(gameState.resources[res]);
@@ -323,7 +322,6 @@ function updateDisplay() {
         }
     }
 
-    // Update resource categories visibility
     for (const categoryKey in resourceCategoriesConfig) {
         const category = resourceCategoriesConfig[categoryKey];
         const categoryContainer = document.getElementById(`resource-category-${categoryKey}`);
@@ -333,7 +331,6 @@ function updateDisplay() {
         }
     }
 
-    // Calculate net income
     const netIncome = Object.keys(gameState.resources).reduce((acc, key) => (acc[key] = 0, acc), {});
     for(const workerType in gameState.assignedWorkers) {
         const workerCount = gameState.assignedWorkers[workerType];
@@ -348,19 +345,10 @@ function updateDisplay() {
         }
     }
 
-    // Food and Inn consumption
-    const totalAssigned = Object.values(gameState.assignedWorkers).reduce((a, b) => a + b, 0);
-    let consumptionDetails = [];
-    if (totalAssigned > 0) {
-        for (const food in gameState.foodConsumptionPerSecond) {
-            const rate = gameState.foodConsumptionPerSecond[food];
-            if (rate > 0) {
-                netIncome[food] -= rate;
-                consumptionDetails.push(`${rate.toFixed(2)} ${_t('resources.'+food)}/s`);
-            }
-        }
+    for (const food in gameState.foodConsumptionPerSecond) {
+        const rate = gameState.foodConsumptionPerSecond[food];
+        if (rate > 0) netIncome[food] -= rate;
     }
-    dom.workerConsumptionInfoText.textContent = consumptionDetails.length > 0 ? _t('ui.workersAreConsuming', {details: consumptionDetails.join(', ')}) : (totalAssigned > 0 ? _t('ui.productionHaltedNoFood') : '');
     
     const innConsumptionRate = 0.5;
     const tierLevels = { settlement: 1, small_village: 2, village: 3, small_town: 4, town: 5 };
@@ -369,7 +357,6 @@ function updateDisplay() {
     if (gameState.innSupplies.beer) netIncome.beer -= consumption;
     if (gameState.innSupplies.meat) netIncome.meat -= consumption;
 
-    // Update passive income display
     for (const res in netIncome) {
         const el = document.getElementById(`${res}-passive`);
         if (el) {
@@ -378,33 +365,45 @@ function updateDisplay() {
             el.classList.toggle('text-green-400', netIncome[res] >= 0);
         }
     }
-    
-    // Update worker panel
-    if(gameState.unlockedFeatures.includes('workers')) {
-        const assignedCount = Object.values(gameState.assignedWorkers).reduce((a, b) => a + b, 0);
-        dom.workersCount.textContent = gameState.totalWorkers;
-        dom.populationLimit.textContent = gameState.populationLimit;
-        dom.freeWorkersCount.textContent = gameState.totalWorkers - assignedCount;
-        dom.workerLimit.textContent = gameState.workerLimit;
-        for(const workerType in workerUIs) {
-            const ui = workerUIs[workerType];
-            if(ui && ui.card) {
-                ui.count.textContent = gameState.assignedWorkers[workerType];
-                ui.slots.textContent = gameState.workerSlots[workerType];
-                ui.card.classList.toggle('hidden', gameState.workerSlots[workerType] === 0);
-                const data = workerData[workerType];
-                let detailsText = '';
-                if(data.descriptionKey) detailsText = _t(data.descriptionKey);
-                else {
-                    if (data.produces) detailsText += `${_t('ui.produces')}: ${Object.entries(data.produces).map(([res, amount]) => `+${amount} ${_t('resources.'+res)}/s`).join(', ')}`;
-                    if (data.consumes) detailsText += `${detailsText ? '. ' : ''}${_t('ui.consumes')}: ${Object.entries(data.consumes).map(([res, amount]) => `${amount} ${_t('resources.'+res)}/s`).join(', ')}`;
-                }
-                ui.details.textContent = detailsText;
-            }
+}
+
+function updateWorkerPanel() {
+    if(!gameState.unlockedFeatures.includes('workers')) return;
+
+    const assignedCount = Object.values(gameState.assignedWorkers).reduce((a, b) => a + b, 0);
+    dom.workersCount.textContent = gameState.totalWorkers;
+    dom.populationLimit.textContent = gameState.populationLimit;
+    dom.freeWorkersCount.textContent = gameState.totalWorkers - assignedCount;
+    dom.workerLimit.textContent = gameState.workerLimit;
+
+    let consumptionDetails = [];
+    for (const food in gameState.foodConsumptionPerSecond) {
+        const rate = gameState.foodConsumptionPerSecond[food];
+        if (rate > 0) {
+            consumptionDetails.push(`${rate.toFixed(2)} ${_t('resources.'+food)}/s`);
         }
     }
+    dom.workerConsumptionInfoText.textContent = consumptionDetails.length > 0 ? _t('ui.workersAreConsuming', {details: consumptionDetails.join(', ')}) : (assignedCount > 0 ? _t('ui.productionHaltedNoFood') : '');
+    
+    for(const workerType in workerUIs) {
+        const ui = workerUIs[workerType];
+        if(ui && ui.card) {
+            ui.count.textContent = gameState.assignedWorkers[workerType];
+            ui.slots.textContent = gameState.workerSlots[workerType];
+            ui.card.classList.toggle('hidden', gameState.workerSlots[workerType] === 0);
+            const data = workerData[workerType];
+            let detailsText = '';
+            if(data.descriptionKey) detailsText = _t(data.descriptionKey);
+            else {
+                if (data.produces) detailsText += `${_t('ui.produces')}: ${Object.entries(data.produces).map(([res, amount]) => `+${amount} ${_t('resources.'+res)}/s`).join(', ')}`;
+                if (data.consumes) detailsText += `${detailsText ? '. ' : ''}${_t('ui.consumes')}: ${Object.entries(data.consumes).map(([res, amount]) => `${amount} ${_t('resources.'+res)}/s`).join(', ')}`;
+            }
+            ui.details.textContent = detailsText;
+        }
+    }
+}
 
-    // Update building cards
+function updateBuildingCards() {
     for (const key in buildingUIs) {
         const ui = buildingUIs[key];
          if (!ui || !ui.card) continue;
@@ -522,8 +521,8 @@ function updateDisplay() {
             ui.button.disabled = gameState.buildingQueue.length >= 5 || !allReqsMet;
         }
 
-        if (key === 'inn' && ui.supplySection) {
-            const isInnActive = gameState.buildings.inn.isBuilt || gameState.buildings.tavern.isBuilt;
+        if (key === C.BUILDINGS.INN && ui.supplySection) {
+            const isInnActive = gameState.buildings[C.BUILDINGS.INN].isBuilt || gameState.buildings[C.BUILDINGS.TAVERN].isBuilt;
             ui.supplySection.classList.toggle('hidden', !isInnActive);
             if (isInnActive) {
                 const breadBtn = ui.supplySection.querySelector('#supply-bread-btn');
@@ -538,8 +537,9 @@ function updateDisplay() {
             }
         }
     }
-    
-    // Update general info panel
+}
+
+function updateInfoPanel() {
     const buildingCount = getTotalBuildingCount();
     const buildingLimit = gameState.totalBuildingLimits[gameState.villageTier];
     const tierName = _t(`settlementTiers.${gameState.villageTier}`);
@@ -568,7 +568,6 @@ function updateDisplay() {
         dom.infoTierProgressContainer.classList.add('hidden');
     }
 
-    // Update storage limits and construction queue
     dom.storageLimitsList.innerHTML = '';
     Object.keys(gameState.storageLimits).filter(res => gameState.unlockedFeatures.includes(res)).forEach(res => dom.storageLimitsList.appendChild(renderStorageItem(res)));
     
@@ -586,8 +585,9 @@ function updateDisplay() {
             dom.infoConstructionQueue.appendChild(queueItemDiv);
         });
     }
+}
 
-    // Update visibility of features/tabs
+function updateFeatureVisibility() {
     dom.canteenSection.classList.toggle('hidden', !gameState.unlockedFeatures.includes('workers'));
     if (!dom.canteenSection.classList.contains('hidden')) {
         for (const food in gameState.suppliedFoods) {
@@ -599,7 +599,7 @@ function updateDisplay() {
         }
     }
     const gatheringTabButton = document.querySelector('.menu-button[onclick="showView(\'gathering\')"]');
-    const shouldHideGathering = (gameState.villageTier !== 'settlement');
+    const shouldHideGathering = (gameState.villageTier !== C.TIERS.SETTLEMENT);
     gatheringTabButton.classList.toggle('hidden', shouldHideGathering);
     if (shouldHideGathering && dom.gatheringView.classList.contains('active')) showView('workers');
     
@@ -612,10 +612,7 @@ function updateDisplay() {
         }
         if (feature === 'workers') dom.workersMenuButton.classList.remove('hidden');
     });
-
-    updateCheatPanel();
 }
-
 
 function updateCheatPanel() {
     for (const res of Object.keys(gameState.resources)) {
@@ -628,6 +625,17 @@ function updateCheatPanel() {
     const addSettlerBtn = dom.cheatPanelContent.querySelector('button:last-child');
     if(addSettlerBtn) addSettlerBtn.textContent = _t('ui.add1Settler');
 }
+
+// This is the main dispatcher function
+function updateDisplay() {
+    updateResourceBar();
+    updateWorkerPanel();
+    updateBuildingCards();
+    updateInfoPanel();
+    updateFeatureVisibility();
+    updateCheatPanel();
+}
+
 
 // ===================================================================================
 //
@@ -724,11 +732,11 @@ function showResourceTooltip(resource, event) {
         consumers.push({ source: _t('ui.workers'), amount: gameState.foodConsumptionPerSecond[resource] });
     }
 
-    if (isBuildingTierMet('inn') && gameState.innSupplies[resource]) {
+    if (isBuildingTierMet(C.BUILDINGS.INN) && gameState.innSupplies[resource]) {
         const innConsumptionRate = 0.5;
         const tierLevels = { settlement: 1, small_village: 2, village: 3, small_town: 4, town: 5 };
         const consumption = innConsumptionRate * tierLevels[gameState.villageTier];
-        consumers.push({ source: _t('buildingNames.inn'), amount: consumption });
+        consumers.push({ source: _t(buildingDataConfig.inn.nameKey), amount: consumption });
     }
 
     let html = `<strong class="text-lg text-blue-300">${resourceName}</strong>`;
@@ -758,13 +766,15 @@ function showSettlerTooltip(event) {
     if (timeData.bonus > 0) {
         html += `<hr class="border-gray-600 my-1">`;
         let bonusHtml = '';
-        if (isBuildingTierMet('church') && gameState.assignedWorkers.priest > 0) bonusHtml += `<li>${_t('ui.bonusFrom')} ${_t('buildingNames.church')}: -${(gameState.buildings.church.effect.settlerTimeBonus * 100).toFixed(0)}%</li>`;
-        if (isBuildingTierMet('healersHut') && gameState.assignedWorkers.healer > 0) bonusHtml += `<li>${_t('ui.bonusFrom')} ${_t('buildingNames.healersHut')}: -${(gameState.buildings.healersHut.effect.settlerTimeBonus * 100).toFixed(0)}%</li>`;
-        if (isBuildingTierMet('tavern') && gameState.assignedWorkers.innkeeper > 0) {
-            bonusHtml += `<li>${_t('ui.bonusFrom')} ${_t('buildingNames.inn')}: -${(gameState.buildings.inn.effect.settlerTimeBonus * 100).toFixed(0)}%</li>`;
-            if (gameState.assignedWorkers.tavernMaid > 0) bonusHtml += `<li>${_t('ui.bonusFrom')} ${_t('buildingNames.tavern')}: -${(gameState.buildings.tavern.effect.settlerTimeBonus * 100).toFixed(0)}%</li>`;
-        } else if (isBuildingTierMet('inn') && gameState.assignedWorkers.innkeeper > 0) {
-            bonusHtml += `<li>${_t('ui.bonusFrom')} ${_t('buildingNames.inn')}: -${(gameState.buildings.inn.effect.settlerTimeBonus * 100).toFixed(0)}%</li>`;
+        if (isBuildingTierMet(C.BUILDINGS.CHURCH) && gameState.assignedWorkers[C.WORKERS.PRIEST] > 0) bonusHtml += `<li>${_t('ui.bonusFrom')} ${_t(buildingDataConfig.church.nameKey)}: -${(gameState.buildings.church.effect.settlerTimeBonus * 100).toFixed(0)}%</li>`;
+        if (isBuildingTierMet(C.BUILDINGS.HEALERS_HUT) && gameState.assignedWorkers[C.WORKERS.HEALER] > 0) bonusHtml += `<li>${_t('ui.bonusFrom')} ${_t(buildingDataConfig.healersHut.nameKey)}: -${(gameState.buildings.healersHut.effect.settlerTimeBonus * 100).toFixed(0)}%</li>`;
+        if (isBuildingTierMet(C.BUILDINGS.TAVERN)) {
+             if (gameState.assignedWorkers[C.WORKERS.INNKEEPER] > 0) {
+                bonusHtml += `<li>${_t('ui.bonusFrom')} ${_t(buildingDataConfig.inn.nameKey)}: -${(gameState.buildings.inn.effect.settlerTimeBonus * 100).toFixed(0)}%</li>`;
+                if (gameState.assignedWorkers[C.WORKERS.TAVERN_MAID] > 0) bonusHtml += `<li>${_t('ui.bonusFrom')} ${_t(buildingDataConfig.tavern.nameKey)}: -${(gameState.buildings.tavern.effect.settlerTimeBonus * 100).toFixed(0)}%</li>`;
+             }
+        } else if (isBuildingTierMet(C.BUILDINGS.INN) && gameState.assignedWorkers[C.WORKERS.INNKEEPER] > 0) {
+            bonusHtml += `<li>${_t('ui.bonusFrom')} ${_t(buildingDataConfig.inn.nameKey)}: -${(gameState.buildings.inn.effect.settlerTimeBonus * 100).toFixed(0)}%</li>`;
         }
         if (gameState.innSupplies.bread) bonusHtml += `<li>${_t('ui.bonusFrom')} ${_t('resources.bread')}: -5%</li>`;
         if (gameState.innSupplies.beer) bonusHtml += `<li>${_t('ui.bonusFrom')} ${_t('resources.beer')}: -5%</li>`;
@@ -792,7 +802,7 @@ function showBuildTimeTooltip(key, event) {
     html += `<hr class="border-gray-600 my-1">`;
     html += `<div><strong class="text-green-400">${_t('ui.buildPower')}:</strong><ul>`;
     html += `<li>${_t('ui.base')}: ${playerBaseSpeed.toFixed(2)}</li>`; 
-    html += `<li>${_t('workerNames.builder')} (${details.builderCount}): +${details.builderPower.toFixed(2)}</li>`;
+    html += `<li>${_t(workerData.builder.nameKey)} (${details.builderCount}): +${details.builderPower.toFixed(2)}</li>`;
     html += `</ul></div>`;
     html += `<hr class="border-gray-600 my-1">`;
     html += `<div><span>${_t('ui.totalBuildSpeed')}:</span> <span class="font-semibold">${details.totalSpeed.toFixed(2)}</span></div>`;
