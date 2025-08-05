@@ -20,7 +20,6 @@ const C = {
         TAVERN: 'tavern',
         CHURCH: 'church',
         HEALERS_HUT: 'healersHut',
-        // Potencjalnie więcej kluczy w przyszłości
     },
     RESOURCES: {
         WOOD: 'wood',
@@ -31,7 +30,6 @@ const C = {
         BREAD: 'bread',
         BEER: 'beer',
         MEAT: 'meat',
-        // Itd. dla wszystkich surowców
     },
     WORKERS: {
         BUILDER: 'builder',
@@ -43,7 +41,44 @@ const C = {
         TAVERN_MAID: 'tavernMaid',
         PRIEST: 'priest',
         HEALER: 'healer'
-        // Itd. dla wszystkich pracowników
+    }
+};
+
+const tierConfig = {
+    [C.TIERS.SETTLEMENT]: {
+        population: 0,
+        buildingLimit: 15,
+        unlocks: [] 
+    },
+    [C.TIERS.SMALL_VILLAGE]: {
+        population: 10,
+        buildingLimit: 45,
+        unlocks: [
+            'wellBuilding', 'fishermansHutBuilding', 'pottersWorkshopBuilding', 
+            'herbalistsGardenBuilding', 'millBuilding', 'bakeryBuilding', 
+            'brickyardBuilding', 'candlemakersWorkshopBuilding'
+        ],
+        showModal: true 
+    },
+    [C.TIERS.VILLAGE]: {
+        population: 40,
+        buildingLimit: 100,
+        unlocks: [
+            'largeYardBuilding', 'largeGranaryBuilding', 'largeDepotBuilding', 
+            'treasuryBuilding', 'hopFarmBuilding', 'breweryBuilding', 'ranchBuilding',
+            'butcherBuilding', 'tanneryBuilding', 'sheepFarmBuilding', 
+            'weaversWorkshopBuilding', 'tailorsWorkshopBuilding', 'healersHutBuilding'
+        ]
+    },
+    [C.TIERS.SMALL_TOWN]: {
+        population: 150,
+        buildingLimit: 150,
+        unlocks: ['tenementBuilding']
+    },
+    [C.TIERS.TOWN]: {
+        population: 800,
+        buildingLimit: 300,
+        unlocks: []
     }
 };
 
@@ -165,6 +200,3 @@ const buildingDataConfig = {
     //Tier 4 - Miasteczko
     tenement: { nameKey: "buildingNames.tenement", descriptionKey: "buildingDescriptions.tenement", category: "population", cost: { wood: 200, stone: 150, bricks: 450 }, count: 0, repeatable: true, effect: { population: 10 }, requires: { building: { key: C.BUILDINGS.MASTER_BUILDERS_HOUSE, staffed: true } } },
 };
-
-const tierRequirementsConfig = { settlement: 0, small_village: 10, village: 40, small_town: 150, town: 800, };
-const totalBuildingLimitsConfig = { settlement: 15, small_village: 45, village: 100, small_town: 150, town: 300, };

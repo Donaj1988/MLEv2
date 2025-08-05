@@ -8,6 +8,17 @@ let gameState = {};
 const SAVE_KEY = 'economicGameSave_v79_t2_t3_impl';
 
 function getDefaultGameState() {
+    // UPDATED: This function now uses the new tierConfig object.
+    const tierKeys = Object.keys(tierConfig);
+    const tierRequirements = tierKeys.reduce((acc, key) => {
+        acc[key] = tierConfig[key].population;
+        return acc;
+    }, {});
+    const totalBuildingLimits = tierKeys.reduce((acc, key) => {
+        acc[key] = tierConfig[key].buildingLimit;
+        return acc;
+    }, {});
+
     return {
         resources: { 
             wood: 0, stone: 0, grain: 0, flour: 0, bread: 0, cattle: 0, meat: 0, hops: 0, water: 0, beer: 0, rawhide: 0, leather: 0, honey: 0, wax: 0, fish: 0, clay: 0, pottery: 0, bricks: 0, wool: 0, fabric: 0, clothes: 0, herbs: 0, candles: 0,
@@ -32,8 +43,8 @@ function getDefaultGameState() {
         currentProductionBonus: 1.0, villageTier: C.TIERS.SETTLEMENT, nextSettlerEvent: 10, nextSettlerTime: 10,
         innSupplies: { bread: false, beer: false, meat: false, },
         buildings: JSON.parse(JSON.stringify(buildingDataConfig)),
-        totalBuildingLimits: totalBuildingLimitsConfig,
-        tierRequirements: tierRequirementsConfig,
+        totalBuildingLimits: totalBuildingLimits, // from new config
+        tierRequirements: tierRequirements, // from new config
         buildingQueue: [], 
         productionBonuses: {}, 
         lastSaveTimestamp: Date.now()
@@ -47,12 +58,6 @@ function getDefaultGameState() {
 //
 // ===================================================================================
 
-/**
- * NEW: Central function to check all building requirements.
- * This is now the single source of truth for buildability.
- * @param {string} key - The building key (e.g., C.BUILDINGS.REEVES_HOUSE).
- * @returns {object} An object detailing if requirements and costs are met.
- */
 function checkBuildingRequirements(key) {
     const building = gameState.buildings[key];
     const results = {
@@ -68,7 +73,6 @@ function checkBuildingRequirements(key) {
 
     const reqs = building.requires || {};
 
-    // Check non-cost requirements
     if (reqs.population && gameState.totalWorkers < reqs.population) {
         results.requirements.passed = false;
         results.requirements.messages.push(_t('ui.populationReq', {count: reqs.population}));
@@ -111,7 +115,6 @@ function checkBuildingRequirements(key) {
         results.requirements.messages.push(_t('ui.workerReq', {worker: _t(workerData[reqs.worker.key].nameKey)}));
     }
 
-    // Check resource costs
     for (const resource in building.cost) {
         const has = gameState.resources[resource];
         const required = building.cost[resource];
@@ -125,7 +128,6 @@ function checkBuildingRequirements(key) {
     results.allChecksPassed = results.requirements.passed && results.cost.passed;
     return results;
 }
-
 
 function recalculateAllStats() {
     const defaultState = getDefaultGameState();
@@ -315,9 +317,6 @@ function unlockGameFeatures(features) {
     });
 }
 
-/**
- * REFACTORED: This function now uses the centralized checkBuildingRequirements function.
- */
 function startBuilding(key) {
     const building = gameState.buildings[key];
     if(!building) {
@@ -343,20 +342,17 @@ function startBuilding(key) {
     
     const check = checkBuildingRequirements(key);
     if (!check.allChecksPassed) {
-        // Use the messages from the check, or a generic cost message if that's the only issue.
         const errorMessage = check.requirements.messages.length > 0 
             ? check.requirements.messages.join(' ') 
-            : _t("messages.notEnoughResources", { resources: '' }); // UI will show specifics
+            : _t("messages.notEnoughResources", { resources: '' });
         queueMessage(errorMessage, 'error');
         return;
     }
 
-    // Deduct resources
     for(const resource in building.cost) {
         gameState.resources[resource] -= building.cost[resource];
     }
     
-    // Add to queue
     const { currentTime } = calculateBuildTime(key);
     gameState.buildingQueue.push({ key: key, progress: 0, totalTime: currentTime });
     queueMessage(_t("messages.buildQueued", {building: _t(building.nameKey)}));
@@ -454,7 +450,7 @@ function unassignWorker(type, force = false) {
         return;
     }
     if (gameState.assignedWorkers[type] <= 0) {
-        return; // No message needed for trying to unassign 0
+        return;
     }
     gameState.assignedWorkers[type]--;
     recalculateAllStats();
@@ -810,26 +806,25 @@ function updateGameState(delta) {
     const currentTierIndex = tierKeys.indexOf(currentTier);
     const newTierIndex = tierKeys.indexOf(newTier);
 
+    // REFACTORED: Tier-up logic now uses tierConfig
     if (newTierIndex > currentTierIndex) {
+        const newTierData = tierConfig[newTier];
+        
         let canAdvance = false;
         if (newTier === C.TIERS.SMALL_VILLAGE && isBuildingTierMet(C.BUILDINGS.REEVES_HOUSE)) canAdvance = true;
         else if (newTier === C.TIERS.VILLAGE && isBuildingTierMet(C.BUILDINGS.VILLAGE_HALL)) canAdvance = true;
-        else if (newTier === C.TIERS.SMALL_TOWN && isBuildingTierMet('townHall')) canAdvance = true;
-        else if (newTier === C.TIERS.TOWN && isBuildingTierMet('cityHall')) canAdvance = true;
+        // Add future tier-up building requirements here
         
         if (canAdvance) {
             gameState.villageTier = newTier;
-            const tierName = _t(`settlementTiers.${newTier}`);
-            queueMessage(_t("messages.tierUp", {tier: tierName}));
-            if (newTier === C.TIERS.SMALL_VILLAGE) {
-                unlockGameFeatures(['wellBuilding', 'fishermansHutBuilding', 'pottersWorkshopBuilding', 'herbalistsGardenBuilding', 'millBuilding', 'bakeryBuilding', 'brickyardBuilding', 'candlemakersWorkshopBuilding']);
+            queueMessage(_t("messages.tierUp", {tier: _t(`settlementTiers.${newTier}`)}));
+            
+            if (newTierData.unlocks && newTierData.unlocks.length > 0) {
+                unlockGameFeatures(newTierData.unlocks);
+            }
+            
+            if (newTierData.showModal) {
                 showTierUpModal();
-            }
-            if (newTier === C.TIERS.VILLAGE) {
-                unlockGameFeatures(['largeYardBuilding', 'largeGranaryBuilding', 'largeDepotBuilding', 'treasuryBuilding', 'hopFarmBuilding', 'breweryBuilding', 'ranchBuilding', 'butcherBuilding', 'tanneryBuilding', 'sheepFarmBuilding', 'weaversWorkshopBuilding', 'tailorsWorkshopBuilding', 'healersHutBuilding']);
-            }
-            if (newTier === C.TIERS.SMALL_TOWN) {
-                unlockGameFeatures(['tenementBuilding']);
             }
         }
     }
