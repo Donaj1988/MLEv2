@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="pl">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>My Little Empire</title>
+  <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏰</text></svg>">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    html,body{height:100%;overflow:hidden;}
+    body{font-family:'Inter',sans-serif;display:flex;flex-direction:column;background:#0f172a;color:#e2e8f0;}
+    .main-content-wrapper{flex-grow:1;overflow-y:auto;}
+    .log-container::-webkit-scrollbar,.info-container::-webkit-scrollbar,.main-content-wrapper::-webkit-scrollbar,.middle-column-content::-webkit-scrollbar{width:8px;}
+    .log-container::-webkit-scrollbar-track,.info-container::-webkit-scrollbar-track,.main-content-wrapper::-webkit-scrollbar-track,.middle-column-content::-webkit-scrollbar-track{background:#1a202c;}
+    .log-container::-webkit-scrollbar-thumb,.info-container::-webkit-scrollbar-thumb,.main-content-wrapper::-webkit-scrollbar-thumb,.middle-column-content::-webkit-scrollbar-thumb{background-color:#4a5568;border-radius:10px;border:2px solid #2d3748;}
+    .menu-button.active{border-color:#4299e1;background-color:#1f2a44;color:#e2e8f0;}
+    .view-section{display:none;}
+    .view-section.active{display:block;}
+    .lang-btn{padding:0.25rem 0.75rem;border:2px solid transparent;border-radius:0.375rem;font-weight:600;transition:all .2s; background:#0f172a; color:#e2e8f0;}
+    .lang-btn.active{border-color:#4299e1;background-color:#1f2a44;color:#e2e8f0;}
+  </style>
+</head>
+
+<body class="bg-gray-900 text-gray-200">
+
+  <div class="absolute top-2 right-4 z-30 flex gap-2">
+    <button id="btnPl" class="lang-btn" data-lang="pl">PL</button>
+    <button id="btnEn" class="lang-btn active" data-lang="en">EN</button>
+  </div>
+
+  <div class="bg-gray-800 shadow-md py-2 px-4 sticky top-0 z-20 flex-shrink-0">
+    <div id="resource-bar-container"
+         class="max-w-7xl mx-auto flex justify-center items-start flex-wrap gap-x-6 gap-y-2">
+    </div>
+  </div>
+
+  <div class="main-content-wrapper p-4 lg:p-6">
+    <div class="grid grid-cols-1 lg:grid-cols-[340px_1fr_340px] gap-6 h-full">
+
+      <div class="lg:col-span-1 bg-gray-800 rounded-lg shadow-lg flex flex-col h-full max-h-[calc(100vh-150px)]">
+        <div class="p-4 border-b border-gray-700 flex-shrink-0">
+          <h2 class="text-lg font-bold" data-i18n="ui.eventLog"></h2>
+        </div>
+        <div id="logContainer" class="log-container p-4 flex-grow overflow-y-auto flex flex-col-reverse gap-2">
+        </div>
+      </div>
+
+      <div class="lg:col-span-1 bg-gray-800 rounded-lg shadow-lg h-full max-h-[calc(100vh-150px)] flex flex-col">
+        <div class="border-b border-gray-700 flex-shrink-0">
+          <div class="flex">
+            <button id="gathering-btn" onclick="showView('gathering')" class="menu-button active flex-1 py-4 px-4 text-center font-semibold text-gray-400 border-b-2 border-transparent hover:bg-gray-700 transition" data-i18n="ui.gathering"></button>
+            <button id="workers-menu-button" onclick="showView('workers')" class="menu-button flex-1 py-4 px-4 text-center font-semibold text-gray-400 border-b-2 border-transparent hover:bg-gray-700 transition" data-i18n="ui.workers"></button>
+            <button id="buildings-btn" onclick="showView('buildings')" class="menu-button flex-1 py-4 px-4 text-center font-semibold text-gray-400 border-b-2 border-transparent hover:bg-gray-700 transition" data-i18n="ui.buildings"></button>
+          </div>
+        </div>
+        <div class="middle-column-content p-6 overflow-y-auto flex-grow">
+          <div id="gathering-view" class="view-section active">
+            <div class="grid grid-cols-2 gap-4">
+              <button id="collect-wood-button" onclick="collectResource('wood')" title="Dodaje 5 jednostek drewna" title="Dodaje 5 jednostek drewna" class="w-full bg-green-700 hover:bg-green-800 text-white font-bold py-3 px-4 rounded-lg transition" data-i18n="ui.gatherWood"></button>
+              <button id="collect-stone-button" onclick="collectResource('stone')" title="Dodaje 5 jednostek kamienia" title="Dodaje 5 jednostek kamienia" class="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg transition" data-i18n="ui.gatherStone"></button>
+              <button id="collect-clay-button" onclick="collectResource('clay')" title="Dodaje 5 jednostek gliny" title="Dodaje 5 jednostek gliny" class="w-full bg-orange-700 hover:bg-orange-800 text-white font-bold py-3 px-4 rounded-lg transition" data-i18n="ui.gatherClay"></button>
+              <button id="collect-grain-button" onclick="collectResource('grain')" title="Dodaje 5 jednostek zboża" title="Dodaje 5 jednostek zboża" class="w-full bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-3 px-4 rounded-lg transition" data-i18n="ui.gatherGrain"></button>
+            </div>
+            <!-- Workers assignment panel will inject here -->
+          </div>
+          <div id="workers-view" class="view-section">
+            <div class="text-center mb-6 bg-gray-900 p-4 rounded-lg">
+              <p class="text-lg">
+                <span data-i18n="ui.settlers"></span>:
+                <span id="workers-count">0</span> / <span id="population-limit">0</span>
+              </p>
+            </div>
+          </div>
+          <div id="buildings-view" class="view-section">
+            <!-- building cards injected -->
+          </div>
+        </div>
+      </div>
+
+      <div class="lg:col-span-1 bg-gray-800 rounded-lg shadow-lg flex flex-col h-full max-h-[calc(100vh-150px)]">
+        <div class="p-4 border-b border-gray-700 flex-shrink-0">
+          <h2 class="text-lg font-bold" data-i18n="ui.settlementInfo"></h2>
+        </div>
+        <div id="infoContainer" class="info-container p-4 space-y-4 text-sm flex-grow overflow-y-auto">
+          <div><strong class="text-gray-400" data-i18n="ui.population"></strong>
+            <span id="info-population">0 / 0</span>
+          </div>
+          <div><strong class="text-gray-400" data-i18n="ui.settlementTier"></strong>
+            <span id="info-tier"></span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div id="tooltip" class="hidden"></div>
+
+  <script type="module" src="/js/i18n.js"></script>
+  <script type="module" src="/js/main_with_ui.js"></script>
+</body>
+
+</html>

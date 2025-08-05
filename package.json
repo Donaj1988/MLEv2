@@ -1,0 +1,10 @@
+{
+  "name": "final-game-engine",
+  "type": "module",
+  "scripts": {
+    "dev": "vite"
+  },
+  "devDependencies": {
+    "vite": "^5.4.19"
+  }
+}
