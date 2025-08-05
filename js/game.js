@@ -47,6 +47,86 @@ function getDefaultGameState() {
 //
 // ===================================================================================
 
+/**
+ * NEW: Central function to check all building requirements.
+ * This is now the single source of truth for buildability.
+ * @param {string} key - The building key (e.g., C.BUILDINGS.REEVES_HOUSE).
+ * @returns {object} An object detailing if requirements and costs are met.
+ */
+function checkBuildingRequirements(key) {
+    const building = gameState.buildings[key];
+    const results = {
+        allChecksPassed: true,
+        requirements: { passed: true, messages: [] },
+        cost: { passed: true, details: {} }
+    };
+
+    if (!building) {
+        results.allChecksPassed = false;
+        return results;
+    }
+
+    const reqs = building.requires || {};
+
+    // Check non-cost requirements
+    if (reqs.population && gameState.totalWorkers < reqs.population) {
+        results.requirements.passed = false;
+        results.requirements.messages.push(_t('ui.populationReq', {count: reqs.population}));
+    }
+    if (reqs.tier) {
+        const tierOrder = Object.keys(gameState.tierRequirements);
+        if (tierOrder.indexOf(gameState.villageTier) < tierOrder.indexOf(reqs.tier)) {
+            results.requirements.passed = false;
+            results.requirements.messages.push(_t('ui.tierReq', {tier: _t(`settlementTiers.${reqs.tier}`)}));
+        }
+    }
+    if (reqs.building) {
+        const buildingName = _t(gameState.buildings[reqs.building.key].nameKey);
+        if (reqs.building.staffed) {
+            let staffed = isBuildingTierMet(reqs.building.key);
+            if (staffed && reqs.building.workerSlots) {
+                for (const workerKey in reqs.building.workerSlots) {
+                    if (gameState.assignedWorkers[workerKey] < reqs.building.workerSlots[workerKey]) {
+                        staffed = false;
+                        break;  
+                    }
+                }
+            }
+            if (!staffed) {
+                let specificReq = _t('ui.staffedBuildingReq', { building: buildingName });
+                if (reqs.building.workerSlots) {
+                    const requiredWorkers = Object.keys(reqs.building.workerSlots).map(k => `${reqs.building.workerSlots[k]} ${_t(workerData[k].nameKey)}`).join(', ');
+                    specificReq += ` (${_t('ui.requires')}: ${requiredWorkers})`;
+                }
+                results.requirements.passed = false;
+                results.requirements.messages.push(specificReq);
+            }
+        } else if (!isBuildingTierMet(reqs.building.key)) {
+            results.requirements.passed = false;
+            results.requirements.messages.push(_t('ui.buildingReq', { building: buildingName }));
+        }
+    }
+    if (reqs.worker && gameState.assignedWorkers[reqs.worker.key] < reqs.worker.count) {
+        results.requirements.passed = false;
+        results.requirements.messages.push(_t('ui.workerReq', {worker: _t(workerData[reqs.worker.key].nameKey)}));
+    }
+
+    // Check resource costs
+    for (const resource in building.cost) {
+        const has = gameState.resources[resource];
+        const required = building.cost[resource];
+        const met = has >= required;
+        results.cost.details[resource] = { required, has, met };
+        if (!met) {
+            results.cost.passed = false;
+        }
+    }
+
+    results.allChecksPassed = results.requirements.passed && results.cost.passed;
+    return results;
+}
+
+
 function recalculateAllStats() {
     const defaultState = getDefaultGameState();
     
@@ -94,8 +174,8 @@ function recalculateAllStats() {
     let assistantBonus = 0;
     const assistantCount = gameState.assignedWorkers.foremanAssistant;
     if (assistantCount > 0) {
-        if (isBuildingTierMet('workersGuildhall')) assistantBonus = assistantCount * 65; // Note: 'workersGuildhall' is not in C.BUILDINGS yet
-        else if (isBuildingTierMet('workersBarracks')) assistantBonus = assistantCount * 20; // Note: 'workersBarracks' is not in C.BUILDINGS yet
+        if (isBuildingTierMet('workersGuildhall')) assistantBonus = assistantCount * 65;
+        else if (isBuildingTierMet('workersBarracks')) assistantBonus = assistantCount * 20;
         else if (isBuildingTierMet(C.BUILDINGS.WORKERS_QUARTERS)) assistantBonus = assistantCount * 22;
     }
     gameState.workerLimit += assistantBonus;
@@ -235,70 +315,13 @@ function unlockGameFeatures(features) {
     });
 }
 
+/**
+ * REFACTORED: This function now uses the centralized checkBuildingRequirements function.
+ */
 function startBuilding(key) {
     const building = gameState.buildings[key];
     if(!building) {
         console.error(`Building with key ${key} not found!`);
-        return;
-    }
-    const reqs = building.requires || {};
-
-    let allReqsMet = true;
-    let requirementsMessages = [];
-
-    if (reqs.population && gameState.totalWorkers < reqs.population) {
-        requirementsMessages.push(_t('ui.populationReq', {count: reqs.population}));
-        allReqsMet = false;
-    }
-    if (reqs.tier) {
-        const tierOrder = Object.keys(gameState.tierRequirements);
-        if (tierOrder.indexOf(gameState.villageTier) < tierOrder.indexOf(reqs.tier)) {
-            requirementsMessages.push(_t('ui.tierReq', {tier: _t(`settlementTiers.${reqs.tier}`)}));
-            allReqsMet = false;
-        }
-    }
-    if (reqs.building) {
-        const requiredBuilding = gameState.buildings[reqs.building.key];
-        const buildingName = _t(requiredBuilding.nameKey);
-        if (reqs.building.staffed) {
-            let staffed = true;
-            if (!isBuildingTierMet(reqs.building.key)) {
-                staffed = false;
-            }
-            if (reqs.building.workerSlots) {
-                for (const workerKey in reqs.building.workerSlots) {
-                    const requiredCount = reqs.building.workerSlots[workerKey];
-                    if (gameState.assignedWorkers[workerKey] < requiredCount) {
-                        staffed = false;
-                        break;  
-                    }
-                }
-            }
-            if (!staffed) {
-                 let specificReq = _t('ui.staffedBuildingReq', { building: buildingName });
-                if (reqs.building.workerSlots) {
-                    const requiredWorkers = Object.keys(reqs.building.workerSlots)
-                        .map(k => `${reqs.building.workerSlots[k]} ${_t(workerData[k].nameKey)}`)
-                        .join(', ');
-                    specificReq += ` (${_t('ui.requires')}: ${requiredWorkers})`;
-                }
-                requirementsMessages.push(specificReq);
-                allReqsMet = false;
-            }
-        } else if (!isBuildingTierMet(reqs.building.key)) {
-            requirementsMessages.push(_t('ui.buildingReq', { building: buildingName }));
-            allReqsMet = false;
-        }
-    }
-    if (reqs.worker) {
-        if (gameState.assignedWorkers[reqs.worker.key] < reqs.worker.count) {
-            requirementsMessages.push(_t('ui.workerReq', {worker: _t(workerData[reqs.worker.key].nameKey)}));
-            allReqsMet = false;
-        }
-    }
-
-    if (!allReqsMet) {
-        queueMessage(requirementsMessages.join(' '), 'error');
         return;
     }
     
@@ -317,27 +340,28 @@ function startBuilding(key) {
          queueMessage(_t("messages.tierBuildingLimit"), 'error');
         return;
     }
-
-    let missingResources = [];
-    for(const resource in building.cost) {
-        if(gameState.resources[resource] < building.cost[resource]) {
-            missingResources.push(`${building.cost[resource]} ${_t('resources.'+resource)}`);
-        }
-    }
-
-    if (missingResources.length > 0) {
-        queueMessage(_t("messages.notEnoughResources", {resources: missingResources.join(', ')}), 'error');
+    
+    const check = checkBuildingRequirements(key);
+    if (!check.allChecksPassed) {
+        // Use the messages from the check, or a generic cost message if that's the only issue.
+        const errorMessage = check.requirements.messages.length > 0 
+            ? check.requirements.messages.join(' ') 
+            : _t("messages.notEnoughResources", { resources: '' }); // UI will show specifics
+        queueMessage(errorMessage, 'error');
         return;
     }
 
+    // Deduct resources
     for(const resource in building.cost) {
         gameState.resources[resource] -= building.cost[resource];
     }
     
+    // Add to queue
     const { currentTime } = calculateBuildTime(key);
     gameState.buildingQueue.push({ key: key, progress: 0, totalTime: currentTime });
     queueMessage(_t("messages.buildQueued", {building: _t(building.nameKey)}));
 }
+
 
 function cancelBuilding(index) {
     if (index < 0 || index >= gameState.buildingQueue.length) return;
@@ -430,8 +454,7 @@ function unassignWorker(type, force = false) {
         return;
     }
     if (gameState.assignedWorkers[type] <= 0) {
-        queueMessage(_t('messages.noMoreSlots'), "error");
-        return;
+        return; // No message needed for trying to unassign 0
     }
     gameState.assignedWorkers[type]--;
     recalculateAllStats();
@@ -791,8 +814,8 @@ function updateGameState(delta) {
         let canAdvance = false;
         if (newTier === C.TIERS.SMALL_VILLAGE && isBuildingTierMet(C.BUILDINGS.REEVES_HOUSE)) canAdvance = true;
         else if (newTier === C.TIERS.VILLAGE && isBuildingTierMet(C.BUILDINGS.VILLAGE_HALL)) canAdvance = true;
-        else if (newTier === C.TIERS.SMALL_TOWN && isBuildingTierMet('townHall')) canAdvance = true; // Note: 'townHall' is not in C.BUILDINGS yet
-        else if (newTier === C.TIERS.TOWN && isBuildingTierMet('cityHall')) canAdvance = true; // Note: 'cityHall' is not in C.BUILDINGS yet
+        else if (newTier === C.TIERS.SMALL_TOWN && isBuildingTierMet('townHall')) canAdvance = true;
+        else if (newTier === C.TIERS.TOWN && isBuildingTierMet('cityHall')) canAdvance = true;
         
         if (canAdvance) {
             gameState.villageTier = newTier;

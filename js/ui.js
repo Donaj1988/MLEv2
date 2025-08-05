@@ -403,23 +403,30 @@ function updateWorkerPanel() {
     }
 }
 
+/**
+ * REFACTORED: This function is now much simpler. It calls the central
+ * checkBuildingRequirements function and uses its results to update the UI.
+ */
 function updateBuildingCards() {
     for (const key in buildingUIs) {
         const ui = buildingUIs[key];
-         if (!ui || !ui.card) continue;
+        if (!ui || !ui.card) continue;
+
         let currentStageKey = key;
-        if(gameState.buildings[key].isBuilt) {
+        if (gameState.buildings[key].isBuilt) {
             let nextUpgradeInChain = findUpgradeTarget(key);
-            while(nextUpgradeInChain) {
+            while (nextUpgradeInChain) {
                 if (gameState.buildings[nextUpgradeInChain].isBuilt) {
                     currentStageKey = nextUpgradeInChain;
                     nextUpgradeInChain = findUpgradeTarget(nextUpgradeInChain);
                 } else break;
             }
         }
+        
         let isBuilt = gameState.buildings[currentStageKey].isBuilt;
         let upgradeTargetKey = findUpgradeTarget(currentStageKey);
         const stageBuilding = gameState.buildings[currentStageKey];
+
         if (stageBuilding.betaStop && isBuilt) {
             ui.name.innerHTML = _t(stageBuilding.nameKey);
             ui.desc.textContent = _t(stageBuilding.descriptionKey);
@@ -427,27 +434,44 @@ function updateBuildingCards() {
             ui.timeInfo.classList.add('hidden');
             ui.button.innerHTML = _t('ui.notAvailableInBeta');
             ui.button.disabled = true;
-            ui.button.classList.remove('bg-blue-600','hover:bg-blue-700');
-            ui.button.classList.add('bg-red-700','cursor-not-allowed');
+            ui.button.classList.add('bg-red-700', 'cursor-not-allowed');
             ui.status.textContent = _t('ui.built');
             ui.progressBar.style.width = '100%';
             continue;
         }
+
         const currentStageBuilding = gameState.buildings[currentStageKey];
         const queueCount = gameState.buildingQueue.filter(b => b.key === key).length;
         ui.name.innerHTML = `${_t(currentStageBuilding.nameKey)} <span class="text-base text-gray-400">${currentStageBuilding.repeatable ? `(${currentStageBuilding.count}${queueCount > 0 ? ` +${queueCount}` : ''})` : ''}</span>`;
         ui.desc.textContent = _t(currentStageBuilding.descriptionKey);
+
         let isUpgrade = !!upgradeTargetKey && isBuilt;
         let targetKey = isUpgrade ? upgradeTargetKey : currentStageKey;
         let targetBuilding = gameState.buildings[targetKey];
-        let reqs = targetBuilding.requires || {};
+        
         ui.timeInfo.dataset.buildKey = targetKey;
         ui.upgradeSection.classList.toggle('hidden', !(isUpgrade && targetBuilding.upgradesFrom && gameState.buildings[targetBuilding.upgradesFrom].upgradeInfo));
-        if (isUpgrade && targetBuilding.upgradesFrom && gameState.buildings[targetBuilding.upgradesFrom].upgradeInfo) ui.upgradeInfo.textContent = _t(gameState.buildings[targetBuilding.upgradesFrom].upgradeInfo);
+        if (!ui.upgradeSection.classList.contains('hidden')) {
+            ui.upgradeInfo.textContent = _t(gameState.buildings[targetBuilding.upgradesFrom].upgradeInfo);
+        }
+
         const { currentTime: buildTime } = calculateBuildTime(targetKey);
         ui.timeInfo.innerHTML = `<span class="font-semibold">${_t('ui.baseTime')}:</span> ${calculateBuildTime(targetKey).baseTime.toFixed(1)}s, <span class="font-semibold">${_t('ui.constructionTime')}:</span> ${isFinite(buildTime) ? buildTime.toFixed(1) + 's' : '∞'}`;
         ui.cost.innerHTML = Object.entries(targetBuilding.cost).map(([res, amount]) => `<span data-cost-res="${res}">${amount} ${_t('resources.'+res)}</span>`).join(', ');
         
+        // Centralized check call
+        const check = checkBuildingRequirements(targetKey);
+
+        // Update requirements text
+        ui.req.innerHTML = check.requirements.messages.join('<br>') || '';
+        ui.req.classList.toggle('text-red-400', !check.requirements.passed);
+
+        // Update resource cost colors
+        ui.cost.querySelectorAll('span[data-cost-res]').forEach(span => {
+            const res = span.dataset.costRes;
+            span.classList.toggle('text-red-400', !check.cost.details[res]?.met);
+        });
+
         const hammerIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 12l-8.373 8.373a1 1 0 1 1-1.414-1.414L12.586 11.586l-1.99-1.99a3 3 0 1 1 4.24-4.24l1.99 1.99 1.414-1.414a1 1 0 1 1 1.414 1.414L15 12z"></path></svg>`;
         const isInQueue = gameState.buildingQueue.some(b => b.key === targetKey || b.key === key);
         if (isUpgrade && isInQueue) ui.button.innerHTML = `<span>${_t('ui.upgrading')}...</span>`;
@@ -455,47 +479,13 @@ function updateBuildingCards() {
         else ui.button.innerHTML = `${hammerIcon} <span>${_t('ui.build')}</span>`;
         ui.button.onclick = () => startBuilding(targetKey);
 
-        let allReqsMet = true;
-        if (ui.req) {
-            const reqsMsgs = [];
-            if (reqs.population && gameState.totalWorkers < reqs.population) { reqsMsgs.push(_t('ui.populationReq', {count: reqs.population})); allReqsMet = false; }
-            if (reqs.tier) {
-                const tierOrder = Object.keys(gameState.tierRequirements);
-                if (tierOrder.indexOf(gameState.villageTier) < tierOrder.indexOf(reqs.tier)) { reqsMsgs.push(_t('ui.tierReq', {tier: _t(`settlementTiers.${reqs.tier}`)})); allReqsMet = false; }
-            }
-            if (reqs.building) {
-                const reqBuilding = gameState.buildings[reqs.building.key];
-                const buildingName = _t(reqBuilding.nameKey);
-                if (reqs.building.staffed) {
-                    let staffed = isBuildingTierMet(reqs.building.key);
-                    if (staffed && reqs.building.workerSlots) {
-                        for (const workerKey in reqs.building.workerSlots) {
-                            if (gameState.assignedWorkers[workerKey] < reqs.building.workerSlots[workerKey]) { staffed = false; break; }
-                        }
-                    }
-                    if (!staffed) {
-                        let specificReq = _t('ui.staffedBuildingReq', { building: buildingName });
-                        if (reqs.building.workerSlots) specificReq += ` (${_t('ui.requires')}: ${Object.keys(reqs.building.workerSlots).map(k => `${reqs.building.workerSlots[k]} ${_t(workerData[k].nameKey)}`).join(', ')})`;
-                        reqsMsgs.push(specificReq);
-                        allReqsMet = false;
-                    }
-                } else if (!isBuildingTierMet(reqs.building.key)) { reqsMsgs.push(_t('ui.buildingReq', { building: buildingName })); allReqsMet = false; }
-            }
-            if (reqs.worker && gameState.assignedWorkers[reqs.worker.key] < reqs.worker.count) { reqsMsgs.push(_t('ui.workerReq', {worker: _t(workerData[reqs.worker.key].nameKey)})); allReqsMet = false; }
-            ui.req.innerHTML = reqsMsgs.join('<br>') || '';
-            ui.req.classList.toggle('text-red-400', !allReqsMet);
-        }
-
-        let canAfford = true;
-        ui.cost.querySelectorAll('span[data-cost-res]').forEach(span => {
-            const res = span.dataset.costRes;
-            const hasEnough = targetBuilding.cost[res] <= gameState.resources[res];
-            span.classList.toggle('text-red-400', !hasEnough);
-            if(!hasEnough) canAfford = false;
-        });
-        ui.button.classList.toggle('build-btn-cant-afford', !canAfford || !allReqsMet);
         ui.demolishButton.classList.toggle('hidden', !currentStageBuilding.repeatable || currentStageBuilding.count === 0);
 
+        const isButtonDisabled = gameState.buildingQueue.length >= 5 || !check.allChecksPassed;
+        ui.button.disabled = isButtonDisabled;
+        ui.button.classList.toggle('build-btn-cant-afford', !check.cost.passed || !check.requirements.passed);
+        
+        // Update status and progress bar
         if (isInQueue && !targetBuilding.repeatable) {
             const buildInstance = gameState.buildingQueue.find(b => b.key === targetKey);
             if (buildInstance) {
@@ -505,7 +495,7 @@ function updateBuildingCards() {
             }
             ui.button.disabled = true;
         } else {
-            const currentlyConstructing = gameState.buildingQueue[0] && gameState.buildingQueue[0].key === key;
+             const currentlyConstructing = gameState.buildingQueue[0] && gameState.buildingQueue[0].key === key;
             if(currentlyConstructing) {
                 const buildInstance = gameState.buildingQueue[0];
                 const percentage = Math.min(100, (buildInstance.progress / buildInstance.totalTime) * 100);
@@ -518,11 +508,10 @@ function updateBuildingCards() {
                 ui.status.textContent = (currentStageBuilding.repeatable && currentStageBuilding.count > 0) || isBuilt ? _t('ui.built') : _t('ui.notBuilt');
                 ui.progressBar.style.width = `0%`;
             }
-            ui.button.disabled = gameState.buildingQueue.length >= 5 || !allReqsMet;
         }
 
         if (key === C.BUILDINGS.INN && ui.supplySection) {
-            const isInnActive = gameState.buildings[C.BUILDINGS.INN].isBuilt || gameState.buildings[C.BUILDINGS.TAVERN].isBuilt;
+            const isInnActive = isBuildingTierMet(C.BUILDINGS.INN);
             ui.supplySection.classList.toggle('hidden', !isInnActive);
             if (isInnActive) {
                 const breadBtn = ui.supplySection.querySelector('#supply-bread-btn');
